@@ -13,7 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+if os.environ.get("DISPLAY"):   # as app.py does: XWayland where there is one
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 os.environ.setdefault("QT_SCALE_FACTOR", "2")   # sharp on a high-density display
 
 from PySide6.QtCore import QPoint, QTimer, QUrl
@@ -23,9 +24,6 @@ from PySide6.QtQuick import QQuickWindow
 from PySide6.QtWidgets import QApplication
 
 from mubble import app as mubble
-from mubble.audio import Bass
-from mubble.bluetooth import Buds
-from mubble.mpris import Mpris
 
 TRACK  = {"title": "Night Drive", "artist": "Mubble Demo", "playing": True,
           "position": 72.0, "length": 215.0,
@@ -33,8 +31,8 @@ TRACK  = {"title": "Night Drive", "artist": "Mubble Demo", "playing": True,
 MARGIN = 20
 
 # The picture must not depend on what happens to be playing, or start listening.
-Mpris.start = Buds.start = lambda self: None
-Bass.set_running = lambda self, on: None
+mubble.Player.start = mubble.Buds.start = lambda self: None
+mubble.Bass.set_running = lambda self, on: None
 
 QQuickWindow.setDefaultAlphaBuffer(True)
 qt = QApplication(sys.argv)

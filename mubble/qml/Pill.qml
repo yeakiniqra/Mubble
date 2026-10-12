@@ -14,7 +14,7 @@ Window {
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowDoesNotAcceptFocus
     visible: shown || pill.opacity > 0.01
 
-    property bool shown: mubble.hasTrack || toast.running
+    property bool shown: (mubble.hasTrack || toast.running) && !mubble.covered
     property bool open: false
     property string toastText: ""
 
@@ -132,7 +132,9 @@ Window {
             color: "#d916161c"
             layer.enabled: true
             layer.effect: MultiEffect {
-                shadowEnabled: true
+                // Windows clips drawing to the input mask as well, which would
+                // cut the shadow off square at the pill's edge.
+                shadowEnabled: Qt.platform.os !== "windows"
                 shadowColor: "black"
                 shadowOpacity: 0.45
                 shadowBlur: 0.9

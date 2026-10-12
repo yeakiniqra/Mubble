@@ -1,5 +1,6 @@
-"""Application wiring: Qt objects on the GUI thread, D-Bus watchers on their own."""
+"""Application wiring: Qt objects on the GUI thread, media and Bluetooth watchers on their own."""
 
+import ctypes
 import logging
 import math
 import os
@@ -8,23 +9,36 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import (Property, QLockFile, QObject, QPoint, QSettings,
-                            QStandardPaths, Qt, QUrl, Signal, Slot)
+                            QStandardPaths, Qt, QTimer, QUrl, Signal, Slot)
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPixmap, QRegion
 from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent
 from PySide6.QtQuick import QQuickImageProvider, QQuickWindow
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from . import APP_NAME
-from .audio import Bass
-from .bluetooth import Buds
-from .mpris import Mpris
+
+WINDOWS = sys.platform == "win32"
+
+# Only after Qt: winrt bundles an older C++ runtime than Qt's, the first one
+# loaded is the one used, and Qt crashes on the old one.
+if WINDOWS:
+    from .win_audio import Bass
+    from .win_bluetooth import Buds
+    from .win_media import Player
+else:
+    from .audio import Bass
+    from .bluetooth import Buds
+    from .mpris import Mpris as Player
 
 log = logging.getLogger("mubble")
 
-ACCENT   = "#8ab4ff"   # glow colour when the cover has none to offer
-EDGE     = 64          # thickness of each glow strip, px
-TOP_GAP  = 36          # default distance from the top of the screen, clears the GNOME bar
-XCB_DOCK = 0x4         # QXcbWindow::WindowType::Dock
+ACCENT      = "#8ab4ff"   # glow colour when the cover has none to offer
+EDGE        = 64          # thickness of each glow strip, px
+TOP_GAP     = 36          # default distance from the top of the screen, clears the GNOME bar
+XCB_DOCK    = 0x4         # QXcbWindow::WindowType::Dock
+RUN_KEY     = r"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run"
+PERSONALIZE = r"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+FULLSCREEN  = (2, 3, 4)   # QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN, QUNS_PRESENTATION_MODE
 
 
 def _dock(window):
@@ -40,19 +54,43 @@ def _autostart():
     return Path(config) / "autostart" / "mubble.desktop"
 
 
+def _autostart_on():
+    if WINDOWS:
+        return QSettings(RUN_KEY, QSettings.Format.NativeFormat).contains(APP_NAME)
+    return _autostart().exists()
+
+
 def _set_autostart(on):
-    """Start with the desktop session, or stop. The file itself is the setting."""
+    """Start with the desktop session, or stop. The entry itself is the setting:
+    a .desktop file on Linux, a value under the registry's Run key on Windows."""
+    # A packaged build is its own program; from source it is this python and main.py.
+    command = [sys.executable]
+    if not getattr(sys, "frozen", False):
+        if WINDOWS:   # pythonw: no console window at login
+            command[0] = str(Path(sys.executable).with_name("pythonw.exe"))
+        command.append(str(Path(sys.argv[0]).resolve()))
+    command = " ".join('"%s"' % part for part in command)
+    if WINDOWS:
+        run = QSettings(RUN_KEY, QSettings.Format.NativeFormat)
+        if on:
+            run.setValue(APP_NAME, command)
+        else:
+            run.remove(APP_NAME)
+        return
     entry = _autostart()
     if not on:
         entry.unlink(missing_ok=True)
         return
-    # A packaged build is its own program; from source it is this python and main.py.
-    command = [sys.executable]
-    if not getattr(sys, "frozen", False):
-        command.append(str(Path(sys.argv[0]).resolve()))
     entry.parent.mkdir(parents=True, exist_ok=True)
-    entry.write_text("[Desktop Entry]\nType=Application\nName=%s\nExec=%s\n"
-                     % (APP_NAME, " ".join('"%s"' % part for part in command)))
+    entry.write_text("[Desktop Entry]\nType=Application\nName=%s\nExec=%s\n" % (APP_NAME, command))
+
+
+def _fullscreen():
+    """Is a fullscreen video, game or slideshow in front? Only asked on Windows,
+    where the pill is topmost and would sit on it; a GNOME dock goes under."""
+    state = ctypes.c_int()
+    ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state))
+    return state.value in FULLSCREEN
 
 
 def _accent_of(image):
@@ -65,12 +103,15 @@ def _accent_of(image):
 
 
 def _tray_icon():
+    # White suits GNOME's bar and a dark taskbar; a light Windows taskbar needs dark.
+    light = WINDOWS and QSettings(PERSONALIZE, QSettings.Format.NativeFormat).value(
+        "SystemUsesLightTheme", 0, type=int)
     pixmap = QPixmap(64, 64)
     pixmap.fill(Qt.GlobalColor.transparent)
     p = QPainter(pixmap)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(Qt.GlobalColor.white)
+    p.setBrush(QColor("#202020") if light else Qt.GlobalColor.white)
     for i, height in enumerate((22, 44, 32, 14)):
         p.drawRoundedRect(8 + i * 13, (64 - height) // 2, 8, height, 4, 4)
     p.end()
@@ -91,11 +132,12 @@ class ArtProvider(QQuickImageProvider):
 class Bridge(QObject):
     """Everything the QML needs, as the context property `mubble`."""
 
-    stateChanged = Signal()
-    artChanged   = Signal()
-    levelChanged = Signal()
-    glowChanged  = Signal()
-    toasted      = Signal(str)
+    stateChanged   = Signal()
+    artChanged     = Signal()
+    levelChanged   = Signal()
+    glowChanged    = Signal()
+    coveredChanged = Signal()
+    toasted        = Signal(str)
 
     def __init__(self, provider):
         super().__init__()
@@ -109,16 +151,19 @@ class Bridge(QObject):
         self._level    = 0.0
         self._window   = None
         self._mask     = QRegion()
+        self._covered  = False
 
         self.bass = Bass(self)
         self.bass.level.connect(self._on_level)
-        self.mpris = Mpris(self)
-        self.mpris.changed.connect(self._on_state)
-        self.mpris.art.connect(self._on_art)
-        self.mpris.start()
+        self.player = Player(self)
+        self.player.changed.connect(self._on_state)
+        self.player.art.connect(self._on_art)
+        self.player.start()
         self.buds = Buds(self)
         self.buds.connected.connect(self._on_buds)
         self.buds.start()
+        if WINDOWS:
+            QTimer(self, interval=1000, timeout=self._check_covered).start()
 
     # ── state for QML ────────────────────────────────────────────────────────
     hasTrack = Property(bool,  lambda s: bool(s._state),                 notify=stateChanged)
@@ -134,6 +179,7 @@ class Bridge(QObject):
                         notify=artChanged)
     accent   = Property(QColor, lambda s: s._accent, notify=artChanged)
     level    = Property(float,  lambda s: s._level,  notify=levelChanged)
+    covered  = Property(bool,   lambda s: s._covered, notify=coveredChanged)
 
     def _get_glow(self):
         return self._glow
@@ -149,7 +195,15 @@ class Bridge(QObject):
 
     def _sync_capture(self):
         # Listen only while there is something to react to.
-        self.bass.set_running(self._glow and self._state.get("playing", False))
+        self.bass.set_running(self._glow and self._state.get("playing", False)
+                              and not self._covered)
+
+    def _check_covered(self):
+        covered = _fullscreen()
+        if covered != self._covered:
+            self._covered = covered
+            self.coveredChanged.emit()
+            self._sync_capture()
 
     def _on_state(self, state):
         self._state = state
@@ -176,19 +230,19 @@ class Bridge(QObject):
     # ── actions from QML ─────────────────────────────────────────────────────
     @Slot()
     def playPause(self):
-        self.mpris.send("PlayPause")
+        self.player.send("PlayPause")
 
     @Slot()
     def next(self):
-        self.mpris.send("Next")
+        self.player.send("Next")
 
     @Slot()
     def previous(self):
-        self.mpris.send("Previous")
+        self.player.send("Previous")
 
     @Slot(float)
     def seek(self, fraction):
-        self.mpris.seek(min(1.0, max(0.0, fraction)) * self._state.get("length", 0.0))
+        self.player.seek(min(1.0, max(0.0, fraction)) * self._state.get("length", 0.0))
 
     @Slot(float, float, float, float)
     def setMask(self, x, y, width, height):
@@ -233,7 +287,10 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
 
-    runtime = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.RuntimeLocation)
+    # Windows' "runtime" location is the home folder itself; Temp is the place there.
+    where = QStandardPaths.StandardLocation
+    runtime = QStandardPaths.writableLocation(where.TempLocation if WINDOWS
+                                              else where.RuntimeLocation)
     lock = QLockFile(os.path.join(runtime, "mubble.lock"))
     if not lock.tryLock(0):
         log.info("already running")
@@ -283,7 +340,7 @@ def main():
     glow.toggled.connect(bridge.set_glow)
     login = menu.addAction("Start at login")
     login.setCheckable(True)
-    login.setChecked(_autostart().exists())
+    login.setChecked(_autostart_on())
     login.toggled.connect(_set_autostart)
     menu.addAction("Reset position", bridge.reset_position)
     menu.addSeparator()

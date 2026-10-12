@@ -6,10 +6,10 @@
 
 **Your music, in a floating glass pill.**
 
-Mubble shows and controls whatever is playing on your Linux desktop,<br>
+Mubble shows and controls whatever is playing on your Linux or Windows desktop,<br>
 from any app, without you setting anything up.
 
-![Platform](https://img.shields.io/badge/platform-Linux-2b2d42?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-2b2d42?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square)
 ![Qt](https://img.shields.io/badge/Qt%20Quick-PySide6-41cd52?style=flat-square)
 ![Version](https://img.shields.io/badge/version-0.1.0-a855f7?style=flat-square)
@@ -25,9 +25,9 @@ Start a song in Spotify, a YouTube tab in Chrome or Firefox, or a local player.
 Mubble appears at the top of the screen with the cover, the title and the
 artist. Close the player and it slips away again.
 
-It finds players the way the desktop does, over [MPRIS], so there is no login,
-no plugin and no list of supported apps. If an app answers to your media keys,
-it shows up in Mubble.
+It finds players the way the desktop does, over [MPRIS] on Linux and the system
+media controls on Windows, so there is no login, no plugin and no list of
+supported apps. If an app answers to your media keys, it shows up in Mubble.
 
 Mubble is a controller, not a player. It never opens your files or streams
 anything itself.
@@ -113,6 +113,23 @@ Needs Python 3.10 or newer. The glow uses PipeWire (`pw-record`) and the earbuds
 notice uses BlueZ. Both come with current Ubuntu and Fedora, and Mubble runs
 without either.
 
+### On Windows
+
+There is no installer yet. Run it from source (Windows 10 or 11):
+
+```sh
+py -m venv venv
+venv\Scripts\pip install -r requirements.txt
+venv\Scripts\python main.py
+```
+
+Or build a single `mubble.exe` into `dist\`:
+
+```sh
+venv\Scripts\pip install pyinstaller
+venv\Scripts\python -m PyInstaller --noconfirm mubble.spec
+```
+
 ## Use
 
 Nothing appears until something plays.
@@ -138,42 +155,44 @@ Nothing appears until something plays.
 
 ```mermaid
 flowchart LR
-    P["Spotify, browsers,<br>any media player"] -- MPRIS --> M(("Mubble"))
-    B["Bluetooth headphones"] -- BlueZ --> M
-    S["Sound going to<br>your speakers"] -- PipeWire --> F["Bass level<br>47-141 Hz"] --> M
+    P["Spotify, browsers,<br>any media player"] -- "MPRIS / media sessions" --> M(("Mubble"))
+    B["Bluetooth headphones"] -- "BlueZ / WinRT" --> M
+    S["Sound going to<br>your speakers"] -- "PipeWire / WASAPI" --> F["Bass level<br>47-141 Hz"] --> M
     M --> Pill["Glass pill"]
     M --> Glow["Edge glow"]
 ```
 
-| Part | Source |
-| --- | --- |
-| Track and controls | MPRIS over the session D-Bus (`mubble/mpris.py`) |
-| Earbuds | BlueZ over the system D-Bus (`mubble/bluetooth.py`) |
-| Bass level | `pw-record` on the default output, FFT of 47-141 Hz (`mubble/audio.py`) |
-| Interface | Qt Quick (`mubble/qml/`) |
+| Part | Linux | Windows |
+| --- | --- | --- |
+| Track and controls | MPRIS over D-Bus (`mpris.py`) | System media sessions (`win_media.py`) |
+| Earbuds | BlueZ over D-Bus (`bluetooth.py`) | Bluetooth device watcher (`win_bluetooth.py`) |
+| Bass level | `pw-record` on the default output (`audio.py`) | WASAPI loopback (`win_audio.py`) |
+| Interface | Qt Quick (`qml/`) | the same |
 
-About a thousand lines of Python and QML, on three dependencies: PySide6,
-jeepney and numpy.
+The bass level is an FFT of 47-141 Hz, shared by both. Python and QML on PySide6
+and numpy, plus jeepney on Linux and Microsoft's WinRT bindings on Windows.
 
 ## Limits
 
 - GNOME cannot blur what is behind a window, so the glass is the blurred cover
-  under a tint, not a true see-through blur.
+  under a tint, not a true see-through blur. Windows gets the same look.
 - The glow covers the primary screen only.
 - On Wayland, Mubble runs through XWayland so it can stay on top and keep its
   position.
-- Linux only for now.
+- On Windows the earbuds notice gives the name but not the battery level, and
+  the pill has no drop shadow.
 
 ## Roadmap
 
-- Downloadable releases
+- Downloadable releases, with a Windows installer
 - Glow on every monitor
-- A Windows version
 
 ## Develop
 
 - `scripts/fake_player.py` is a stand-in media player, so the pill can be worked
   on without playing real music. It prints every command it receives.
+  `scripts/fake_player_win.py` is the Windows one; it plays a quiet bass kick so
+  the glow has something to react to.
 - `python -m mubble.audio` runs the bass-detection self-check.
 - `scripts/screenshot.py` renders the picture at the top from the real interface,
   with a made-up track on a painted backdrop. Run it again after changing the pill.

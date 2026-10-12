@@ -10,7 +10,7 @@ Window {
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
            | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
-    visible: mubble.glow && mubble.playing
+    visible: mubble.glow && mubble.playing && !mubble.covered
 
     // Drawn as the top strip, then turned to face inwards from its own edge.
     Rectangle {
