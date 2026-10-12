@@ -35,6 +35,26 @@ def _dock(window):
     window.create()
 
 
+def _autostart():
+    config = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericConfigLocation)
+    return Path(config) / "autostart" / "mubble.desktop"
+
+
+def _set_autostart(on):
+    """Start with the desktop session, or stop. The file itself is the setting."""
+    entry = _autostart()
+    if not on:
+        entry.unlink(missing_ok=True)
+        return
+    # A packaged build is its own program; from source it is this python and main.py.
+    command = [sys.executable]
+    if not getattr(sys, "frozen", False):
+        command.append(str(Path(sys.argv[0]).resolve()))
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text("[Desktop Entry]\nType=Application\nName=%s\nExec=%s\n"
+                     % (APP_NAME, " ".join('"%s"' % part for part in command)))
+
+
 def _accent_of(image):
     """A vivid version of the cover's average colour."""
     c = image.scaled(1, 1, Qt.AspectRatioMode.IgnoreAspectRatio,
@@ -261,6 +281,10 @@ def main():
     glow.setCheckable(True)
     glow.setChecked(bridge.glow)
     glow.toggled.connect(bridge.set_glow)
+    login = menu.addAction("Start at login")
+    login.setCheckable(True)
+    login.setChecked(_autostart().exists())
+    login.toggled.connect(_set_autostart)
     menu.addAction("Reset position", bridge.reset_position)
     menu.addSeparator()
     menu.addAction("Quit", app.quit)
