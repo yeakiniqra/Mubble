@@ -7,7 +7,8 @@ Bluetooth earbuds when they connect, and pulses the screen edges with the bass.
 It is a **controller and visualiser, not a player**: it never plays files itself.
 The owner chose that scope on purpose; do not add local playback unless asked.
 
-Status: v0.1.0, first working version, Linux only, not yet published or packaged.
+Status: v0.1.0, first working version, Linux only. `build_deb.sh` makes a `.deb`;
+nothing is published yet.
 
 ## Run and check
 
@@ -19,6 +20,15 @@ Status: v0.1.0, first working version, Linux only, not yet published or packaged
 
 The venv uses the system Python (3.14 on the owner's machine). Recreate it with
 `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`.
+
+```sh
+bash build_deb.sh                        # mubble_<version>_<arch>.deb, about a minute
+.venv/bin/python scripts/screenshot.py   # redraws assets/screenshot.png for the README
+```
+
+`build_deb.sh` needs PyInstaller in the venv (`.venv/bin/pip install pyinstaller`).
+It is a build tool, so it stays out of `requirements.txt`. To try a package without
+installing it: `dpkg-deb -x mubble_*.deb <dir>` and run `<dir>/usr/bin/mubble`.
 
 There is no test suite. To verify a change, run the app next to
 `scripts/fake_player.py`: the pill should appear, and the fake player prints every
@@ -39,6 +49,9 @@ from a script on GNOME Wayland.
 | `mubble/qml/Pill.qml` | The pill window |
 | `mubble/qml/Edge.qml` | One glow strip; four are created, one per screen edge |
 | `scripts/fake_player.py` | Test MPRIS player |
+| `scripts/screenshot.py` | Renders `assets/screenshot.png` from the real QML |
+| `mubble.spec` | PyInstaller recipe: one binary, QML files bundled as data |
+| `build_deb.sh` | Runs PyInstaller, then assembles and builds the `.deb` |
 | `assets/logo.svg`, `logo.png` | App logo; the PNG is rendered from the SVG |
 
 ## How it fits together
@@ -56,6 +69,13 @@ from a script on GNOME Wayland.
   per cover so QML reloads. The glow colour (`accent`) is the cover's average
   colour, made more vivid.
 - **Settings** live in `QSettings("Mubble", "Mubble")`: `glow` and `pos`.
+  **Start at login** is not one of them: the setting is whether
+  `~/.config/autostart/mubble.desktop` exists. Its `Exec` is the packaged binary,
+  or this python plus `main.py` when run from source, so it goes stale if the
+  source folder moves.
+- **The glow level** is read every `TICK` (33 ms) by a timer in `Bass`, not each
+  time `pw-record` delivers sound. The two decay factors in `_measure` are per
+  tick; change `TICK` and they need rescaling.
 
 ### Choosing the player
 
@@ -69,6 +89,14 @@ does not signal position changes.
 
 - **XWayland is forced** (`QT_QPA_PLATFORM=xcb` when `DISPLAY` is set). A native
   Wayland window on GNOME cannot choose its position or stay on top. Do not remove this.
+- **Do not launch from the VS Code terminal when testing against a snap player.**
+  VS Code is a snap, so anything started from its terminal carries the AppArmor
+  label `snap.code.code`, and snap players such as Spotify refuse its D-Bus calls
+  (`AccessDenied`). `_refresh` treats that as a player that is not answering, so the
+  pill just stays hidden; the log names the player once. Start it unconfined instead:
+  `systemd-run --user --unit=mubble-test --collect --working-directory="$PWD" "$PWD/.venv/bin/python" main.py`
+  (logs: `journalctl --user -u mubble-test -f`). Check a process with
+  `cat /proc/<pid>/attr/current`.
 - **Windows are X11 "dock" type.** `_dock()` sets the dynamic property
   `_q_xcb_wm_window_type` to `0x4` and it must run **before** the native window is
   created, so each QML `Window` must start invisible. Dock type is what gives: every
@@ -103,7 +131,11 @@ does not signal position changes.
 
 Verified against `scripts/fake_player.py`: reading track, artist, cover, position;
 seek, next and pause reaching the player; hiding when nothing plays; dock window
-type; the input mask; glow strip orientation; clean shutdown.
+type; the input mask; glow strip orientation; clean shutdown; the packaged binary
+from the `.deb` starting, finding the player and starting the recorder.
+
+The owner tried it with real Spotify (the snap) on 2026-10-12 and was satisfied
+overall; which of the items below that covered was not recorded.
 
 **Not yet verified by anyone:** real Chrome / Spotify playback, the glow reacting to
 real music, a live earbuds connection (name lookup works; battery was not reported
@@ -113,14 +145,19 @@ to check one of these, update this section.
 
 Measured on a 12-core desktop while playing: about 9% of one core for the pill
 alone, about 24% with the glow reacting, near zero when idle. The cost is the four
-strip windows redrawing about 47 times a second.
+strip windows redrawing about 47 times a second. Readings have since been cut to
+30 a second (`TICK`); the cost has not been measured again.
 
 ## Not built yet
 
-Autostart, `.deb` packaging, a licence file, multi-monitor glow, reacting to
-resolution changes, a settings window, Windows and macOS. On Windows the same
-design maps to the system media session API, WASAPI loopback and real acrylic
-blur. macOS is a poor fit: its now-playing API is private and locked down.
+Multi-monitor glow, reacting to resolution changes, a settings window, Windows
+and macOS. Installing the `.deb` with `apt` has not been tried, only running the
+binary inside it. On Windows the same design maps to the system media session
+API, WASAPI loopback and real acrylic blur. That is a port, not a packaging job:
+`mpris.py`, `bluetooth.py` and `audio.py` all talk to things Windows does not
+have, and PyInstaller cannot build an `.exe` from Linux (Kapture builds its own
+on a GitHub Actions Windows runner). macOS is a poor fit: its now-playing API is
+private and locked down.
 
 ## Working rules
 

@@ -1,23 +1,107 @@
-<img src="assets/logo.png" width="96" alt="Mubble logo">
+<div align="center">
+
+<img src="assets/logo.png" width="112" alt="Mubble logo">
 
 # Mubble
 
-A floating glass pill for Linux that shows what is playing, from any app.
+**Your music, in a floating glass pill.**
 
-YouTube in Chrome, Spotify, Firefox, a local player: if it plays sound and
-announces itself to the desktop, Mubble shows it. No per-app setup.
+Mubble shows and controls whatever is playing on your Linux desktop,<br>
+from any app, without you setting anything up.
 
-- **Now playing.** Cover, title, artist. Hover to open progress and
-  previous / play / next. Click the progress bar to seek. Drag to move.
-- **Earbuds.** A short notice when Bluetooth headphones connect, with battery
-  level when the device reports one.
-- **Edge glow.** The screen edges pulse with the bass, in the colour of the
-  cover. Turn it off from the tray icon.
+![Platform](https://img.shields.io/badge/platform-Linux-2b2d42?style=flat-square)
+![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square)
+![Qt](https://img.shields.io/badge/Qt%20Quick-PySide6-41cd52?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.1.0-a855f7?style=flat-square)
+[![Licence](https://img.shields.io/badge/licence-MIT-f59e0b?style=flat-square)](LICENSE)
 
-## Run
+<img src="assets/screenshot.png" width="880" alt="The Mubble pill closed, showing cover, title and artist, and open, with a progress bar and previous, pause and next buttons">
 
-Needs Python 3.10+, PipeWire (`pw-record`, for the glow) and BlueZ (for earbuds).
-Both are standard on current Ubuntu and Fedora.
+</div>
+
+## Press play anywhere
+
+Start a song in Spotify, a YouTube tab in Chrome or Firefox, or a local player.
+Mubble appears at the top of the screen with the cover, the title and the
+artist. Close the player and it slips away again.
+
+It finds players the way the desktop does, over [MPRIS], so there is no login,
+no plugin and no list of supported apps. If an app answers to your media keys,
+it shows up in Mubble.
+
+Mubble is a controller, not a player. It never opens your files or streams
+anything itself.
+
+## What it does
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Now playing
+Cover, title and artist in a pill that takes one line of your screen. The glass
+is tinted by the cover itself, so every track gives it a different colour.
+
+</td>
+<td width="50%" valign="top">
+
+### Controls on hover
+Point at the pill and it opens: progress, previous, play or pause, next. Click
+anywhere on the progress bar to jump there.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Edge glow
+The edges of the screen pulse with the bass, in the colour of the cover. It is
+one switch in the tray menu if you would rather not.
+
+</td>
+<td valign="top">
+
+### Earbuds
+A short notice when Bluetooth headphones connect, with the battery level when
+the device reports one.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Stays where you put it
+Drag it anywhere. It keeps that spot, follows you to every workspace, floats
+above your windows and steps aside for fullscreen video.
+
+</td>
+<td valign="top">
+
+### Stays out of the way
+No taskbar entry, no Alt-Tab entry, no focus stealing. Clicks around the pill
+land on whatever is underneath, and it can start quietly when you log in.
+
+</td>
+</tr>
+</table>
+
+## Install
+
+There is no release to download yet. On Ubuntu or Debian, build the package and
+install it:
+
+```sh
+git clone https://github.com/yeakiniqra/Mubble.git
+cd Mubble
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt pyinstaller
+bash build_deb.sh
+sudo apt install ./mubble_*.deb
+```
+
+Mubble is then in your app menu. Remove it with `sudo apt remove mubble`.
+
+### Or run it from source
 
 ```sh
 python3 -m venv .venv
@@ -25,10 +109,41 @@ python3 -m venv .venv
 .venv/bin/python main.py
 ```
 
-Nothing appears until something plays. The tray icon has **Edge glow**,
-**Reset position** and **Quit**.
+Needs Python 3.10 or newer. The glow uses PipeWire (`pw-record`) and the earbuds
+notice uses BlueZ. Both come with current Ubuntu and Fedora, and Mubble runs
+without either.
+
+## Use
+
+Nothing appears until something plays.
+
+| Do this | And |
+| --- | --- |
+| Hover the pill | It opens, with progress and controls |
+| Click the progress bar | The track jumps to that point |
+| Drag the pill | It moves, and remembers where |
+| Click the tray icon | **Edge glow**, **Start at login**, **Reset position**, **Quit** |
+
+## Privacy
+
+- The glow listens to the sound going **out** to your speakers, never the
+  microphone, and only while something is playing with the glow turned on.
+  GNOME may still show its recording indicator during that time.
+- Nothing is recorded or kept. Each moment of sound becomes one number, the
+  bass level, and is then thrown away.
+- The only thing Mubble fetches from the network is the cover image, from the
+  address the player gives it. There are no accounts and no telemetry.
 
 ## How it works
+
+```mermaid
+flowchart LR
+    P["Spotify, browsers,<br>any media player"] -- MPRIS --> M(("Mubble"))
+    B["Bluetooth headphones"] -- BlueZ --> M
+    S["Sound going to<br>your speakers"] -- PipeWire --> F["Bass level<br>47-141 Hz"] --> M
+    M --> Pill["Glass pill"]
+    M --> Glow["Edge glow"]
+```
 
 | Part | Source |
 | --- | --- |
@@ -37,19 +152,39 @@ Nothing appears until something plays. The tray icon has **Edge glow**,
 | Bass level | `pw-record` on the default output, FFT of 47-141 Hz (`mubble/audio.py`) |
 | Interface | Qt Quick (`mubble/qml/`) |
 
-The glow listens to the sound going **out** to your speakers, never the
-microphone, and only while something is playing with the glow turned on.
-GNOME may still show its "recording" indicator during that time.
+About a thousand lines of Python and QML, on three dependencies: PySide6,
+jeepney and numpy.
 
 ## Limits
 
 - GNOME cannot blur what is behind a window, so the glass is the blurred cover
-  with a tint, not a true see-through blur.
+  under a tint, not a true see-through blur.
 - The glow covers the primary screen only.
-- On Wayland, Mubble runs through XWayland so it can stay on top and keep its position.
+- On Wayland, Mubble runs through XWayland so it can stay on top and keep its
+  position.
 - Linux only for now.
+
+## Roadmap
+
+- Downloadable releases
+- Glow on every monitor
+- A Windows version
 
 ## Develop
 
-`scripts/fake_player.py` is a stand-in media player, so the pill can be worked on
-without playing real music. `python -m mubble.audio` runs the bass-detection self-check.
+- `scripts/fake_player.py` is a stand-in media player, so the pill can be worked
+  on without playing real music. It prints every command it receives.
+- `python -m mubble.audio` runs the bass-detection self-check.
+- `scripts/screenshot.py` renders the picture at the top from the real interface,
+  with a made-up track on a painted backdrop. Run it again after changing the pill.
+
+Started from a snap's terminal (VS Code's, for one), Mubble cannot see snap
+players such as Spotify: they refuse it, and the log says so. Start it from a
+normal terminal.
+
+## Licence
+
+[MIT](LICENSE). Made by [Yeakin Iqra](https://github.com/yeakiniqra), who also
+makes [Kapture](https://github.com/yeakiniqra/Kapture), a screenshot tool for Ubuntu.
+
+[MPRIS]: https://specifications.freedesktop.org/mpris-spec/latest/
