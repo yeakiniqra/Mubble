@@ -39,6 +39,7 @@ class Mpris(QObject):
         self._trackid = ""
         self._state   = {}
         self._art_key = None
+        self._refused = set()   # players already reported as not answering
 
     def start(self):
         """Begin watching. Connect the signals first: state is only sent when it changes."""
@@ -73,8 +74,13 @@ class Mpris(QObject):
                 continue
             try:
                 props = get_all(conn, name, PATH, PLAYER)
-            except Exception:
-                continue   # quit since ListNames, or not answering
+            except Exception as e:
+                # Quit since ListNames, or refusing us: a snap player turns away
+                # a confined caller. Say so once; this runs every second.
+                if name not in self._refused:
+                    self._refused.add(name)
+                    log.warning("%s is not answering: %s", name, e)
+                continue
             meta = {k: v[1] for k, v in props.get("Metadata", {}).items()}
             # Browsers keep an empty, stopped player on the bus between tabs.
             if props.get("PlaybackStatus") != "Stopped" and meta.get("xesam:title"):

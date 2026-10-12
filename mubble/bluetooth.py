@@ -35,8 +35,17 @@ class Buds(QObject):
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
-        try:
-            conn = open_dbus_connection("SYSTEM")
+        # One bad event must not end the watching: a device that drops out again
+        # before it can be described raises, and so does a lost connection.
+        while True:
+            try:
+                self._watch()
+            except Exception as e:
+                log.warning("Bluetooth watcher restarting: %s", e)
+            time.sleep(5)
+
+    def _watch(self):
+        with open_dbus_connection("SYSTEM") as conn:
             rule = MatchRule(type="signal", sender=BLUEZ, interface=PROPS,
                              member="PropertiesChanged")
             rule.add_arg_condition(0, "org.bluez.Device1")
@@ -51,5 +60,3 @@ class Buds(QObject):
                     found = describe(conn, msg.header.fields[HeaderFields.path])
                     if found:
                         self.connected.emit(*found)
-        except Exception as e:
-            log.warning("Bluetooth watcher stopped: %s", e)
