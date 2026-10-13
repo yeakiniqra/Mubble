@@ -14,8 +14,15 @@ Window {
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowDoesNotAcceptFocus
     visible: shown || pill.opacity > 0.01
 
-    property bool shown: (mubble.hasTrack || toast.running) && !mubble.covered
+    property bool shown: ((mubble.hasTrack && !dismissed) || toast.running) && !mubble.covered
     property bool open: false
+    // Sent away with the cross. It stays away until there is something new to
+    // show: another track, or playback starting again.
+    property bool dismissed: false
+    readonly property string track: mubble.title
+    readonly property bool playing: mubble.playing
+    onTrackChanged: dismissed = false
+    onPlayingChanged: if (playing) dismissed = false
     property string toastText: ""
 
     function clock(seconds) {
@@ -73,6 +80,9 @@ Window {
         id: pill
 
         property real radius: win.open ? 32 : 26
+        // 0 closed, 1 open. Tied to the height, so what belongs to the open
+        // pill never shows outside one that is still closing.
+        readonly property real opened: Math.max(0, Math.min(1, (height - 110) / 56))
 
         x: (win.width - width) / 2
         y: 16
@@ -232,13 +242,36 @@ Window {
             anchors.rightMargin: 12
             anchors.verticalCenter: cover.verticalCenter
             spacing: 1
-            Text {
+            Item {
+                id: titleBox
                 width: parent.width
-                elide: Text.ElideRight
-                color: "white"
-                font.pixelSize: win.open ? 16 : 14
-                font.weight: Font.DemiBold
-                text: toast.running ? win.toastText : mubble.title
+                height: title.implicitHeight
+                clip: true
+                Text {
+                    id: title
+                    // A title too long to fit slides through while it plays,
+                    // and is cut short with an ellipsis while it does not.
+                    readonly property real extra: Math.max(0, implicitWidth - titleBox.width)
+                    property real slide: 0   // 0 shows the start, 1 the end
+                    x: slider.running ? -extra * slide : 0
+                    width: slider.running ? implicitWidth : titleBox.width
+                    elide: Text.ElideRight
+                    color: "white"
+                    font.pixelSize: win.open ? 16 : 14
+                    font.weight: Font.DemiBold
+                    text: toast.running ? win.toastText : mubble.title
+                    onTextChanged: if (slider.running) slider.restart()
+                    SequentialAnimation on slide {
+                        id: slider
+                        running: title.extra > 0 && mubble.playing && win.visible
+                        loops: Animation.Infinite
+                        onRunningChanged: if (!running) title.slide = 0
+                        PauseAnimation { duration: 3000 }
+                        NumberAnimation { to: 1; duration: 600 + title.extra * 28 }
+                        PauseAnimation { duration: 1500 }
+                        NumberAnimation { to: 0; duration: 500; easing.type: Easing.InOutSine }
+                    }
+                }
             }
             Text {
                 width: parent.width
@@ -279,7 +312,32 @@ Window {
             }
         }
 
-        // ── opened: progress and transport ───────────────────────────────────
+        // Closed, the pill still says how far along the track is.
+        Rectangle {
+            x: pill.radius
+            y: pill.height - 4
+            width: (pill.width - 2 * pill.radius)
+                   * Math.min(1, mubble.position / Math.max(1, mubble.length))
+            height: 2
+            radius: 1
+            color: "white"
+            opacity: 0.55 * (1 - pill.opened)
+            visible: mubble.length > 0 && opacity > 0
+            Behavior on width { enabled: mubble.playing; NumberAnimation { duration: 1000 } }
+        }
+
+        // ── opened: dismiss, progress and transport ──────────────────────────
+        IconButton {
+            size: 24
+            path: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+            anchors.verticalCenter: undefined
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 8
+            opacity: 0.7 * pill.opened
+            visible: opacity > 0
+            onTapped: { win.dismissed = true; win.open = false }
+        }
         Item {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -288,8 +346,7 @@ Window {
             anchors.rightMargin: 18
             anchors.topMargin: 12
             height: 60
-            // Tied to the pill's height, so it never shows outside a closing pill.
-            opacity: Math.max(0, Math.min(1, (pill.height - 110) / 56))
+            opacity: pill.opened
             visible: opacity > 0
 
             Item {
