@@ -39,15 +39,18 @@ anything itself.
 <td width="50%" valign="top">
 
 ### Now playing
-Cover, title and artist in a pill that takes one line of your screen. The glass
-is tinted by the cover itself, so every track gives it a different colour.
+Cover, title and artist in a pill that takes one line of your screen, with a
+thin line along the bottom for how far the track has got. A title too long to
+fit slides through. The glass is tinted by the cover itself, so every track
+gives it a different colour.
 
 </td>
 <td width="50%" valign="top">
 
 ### Controls on hover
 Point at the pill and it opens: progress, previous, play or pause, next. Click
-anywhere on the progress bar to jump there.
+anywhere on the progress bar to jump there, or the cross to send the pill away
+until the next track.
 
 </td>
 </tr>
@@ -87,8 +90,16 @@ land on whatever is underneath, and it can start quietly when you log in.
 
 ## Install
 
-There is no release to download yet. On Ubuntu or Debian, build the package and
-install it:
+On Ubuntu or Debian, download the `.deb` from the
+[latest release](https://github.com/yeakiniqra/Mubble/releases/latest) and install it:
+
+```sh
+sudo apt install ./mubble_*_amd64.deb
+```
+
+Mubble is then in your app menu. Remove it with `sudo apt remove mubble`.
+
+### Or build the package yourself
 
 ```sh
 git clone https://github.com/yeakiniqra/Mubble.git
@@ -98,8 +109,6 @@ python3 -m venv .venv
 bash build_deb.sh
 sudo apt install ./mubble_*.deb
 ```
-
-Mubble is then in your app menu. Remove it with `sudo apt remove mubble`.
 
 ### Or run it from source
 
@@ -138,6 +147,7 @@ Nothing appears until something plays.
 | --- | --- |
 | Hover the pill | It opens, with progress and controls |
 | Click the progress bar | The track jumps to that point |
+| Click the cross | The pill leaves, and returns with the next track or when you press play again |
 | Drag the pill | It moves, and remembers where |
 | Click the tray icon | **Edge glow**, **Start at login**, **Reset position**, **Quit** |
 
@@ -184,7 +194,7 @@ and numpy, plus jeepney on Linux and Microsoft's WinRT bindings on Windows.
 
 ## Roadmap
 
-- Downloadable releases, with a Windows installer
+- A Windows download on the releases page
 - Glow on every monitor
 
 ## Develop
