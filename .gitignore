@@ -6,3 +6,6 @@ __pycache__/
 build/
 dist/
 *.deb
+
+# local working notes, not part of the project
+CLAUDE.md
