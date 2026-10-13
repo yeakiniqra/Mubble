@@ -99,6 +99,9 @@ sudo apt install ./mubble_*_amd64.deb
 
 Mubble is then in your app menu. Remove it with `sudo apt remove mubble`.
 
+The package is built on Ubuntu 26.04 and is likely to need a system about that
+new. On an older one, build it yourself.
+
 ### Or build the package yourself
 
 ```sh
